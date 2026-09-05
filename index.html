@@ -381,12 +381,11 @@
         <div class="page-container" id="pageContainer"></div>
     </div>
 
-    <!-- FIREBASE MODULE SCRIPT -->
+    <!-- FIREBASE MODULE SCRIPT (STABLE VERSION) -->
     <script type="module">
-        // Using version 12.18.0 as provided
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
-        import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-analytics.js";
-        import { getDatabase, ref, push, onValue, remove } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
+        import { getDatabase, ref, push, onValue, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCBt7i9mvwCWLjuvNTJj5SZKmS8pdWjDzQ",
@@ -543,4 +542,223 @@
 
                     <div class="nav-buttons" style="margin-top: 20px;">
                         <button class="btn" onclick="switchPage('page-6')" style="width: 100%;">Back to M6</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function animateValue(obj, start, end, duration) {
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                const ease = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+                obj.innerHTML = Math.floor(ease * (end - start) + start);
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        function triggerPulse(elId) {
+            const el = document.getElementById(elId);
+            if(el) {
+                el.classList.remove('pulse-anim');
+                void el.offsetWidth; 
+                el.classList.add('pulse-anim');
+            }
+        }
+
+        function calculateScores() {
+            let grandTotal = 0;
+            const grandTotalEl = document.getElementById('grandTotalDisplay');
+            let currentTotal = parseInt(grandTotalEl.textContent) || 0;
+            
+            for (let i = 1; i <= 6; i++) {
+                const select = document.querySelector('.placement-select[data-match="' + i + '"]');
+                const input = document.querySelector('.kills-input[data-match="' + i + '"]');
                 
+                const pos = parseInt(select.value) || 0;
+                const placementPts = pointMap[pos] || 0;
+                const kills = parseInt(input.value) || 0;
+                
+                const matchScore = placementPts + kills;
+                const matchEl = document.getElementById('matchTotal' + i);
+                let currentMatchTotal = parseInt(matchEl.textContent) || 0;
+                
+                if (currentMatchTotal !== matchScore) {
+                    animateValue(matchEl, currentMatchTotal, matchScore, 600);
+                    triggerPulse('matchTotal' + i);
+                }
+                
+                document.getElementById('sum' + i).textContent = matchScore;
+                grandTotal += matchScore;
+            }
+            
+            if (currentTotal !== grandTotal) {
+                animateValue(grandTotalEl, currentTotal, grandTotal, 800);
+                triggerPulse('grandTotalDisplay');
+            }
+        }
+
+        window.manualSave = function() {
+            playTypeSound();
+            const now = new Date();
+            const dateStr = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+            const trackingData = {
+                id: Date.now(),
+                saveDate: dateStr,
+                lobbyTime: document.getElementById('global-lobby-time').value,
+                total: document.getElementById('grandTotalDisplay').textContent,
+                matches: {}
+            };
+            
+            for (let i = 1; i <= 6; i++) {
+                trackingData.matches[i] = {
+                    placement: document.querySelector('.placement-select[data-match="' + i + '"]').value,
+                    kills: document.querySelector('.kills-input[data-match="' + i + '"]').value
+                };
+            }
+            
+            if(window.pushToCloud) {
+                window.pushToCloud(trackingData).then(() => {
+                    alert("Match data synced to squad cloud!");
+                }).catch(err => {
+                    alert("Failed to sync. Check console.");
+                    console.error(err);
+                });
+            }
+        }
+
+        window.loadRecord = function(firebaseId) {
+            playTypeSound();
+            const record = window.squadHistory.find(r => r.firebaseId === firebaseId);
+            if (record) {
+                if (record.lobbyTime) document.getElementById('global-lobby-time').value = record.lobbyTime;
+                for (let i = 1; i <= 6; i++) {
+                    if (record.matches[i]) {
+                        document.querySelector('.placement-select[data-match="' + i + '"]').value = record.matches[i].placement || "0";
+                        document.querySelector('.kills-input[data-match="' + i + '"]').value = record.matches[i].kills || "";
+                    }
+                }
+                calculateScores();
+                alert("Tracker updated with cloud data!");
+            }
+        }
+
+        window.deleteRecord = function(firebaseId) {
+            playTypeSound();
+            if(confirm("Delete this saved match record for the whole squad?")) {
+                if(window.deleteFromCloud) {
+                    window.deleteFromCloud(firebaseId);
+                }
+            }
+        }
+
+        window.updateStorageView = function() {
+            const previewEl = document.getElementById('storagePreview');
+            const history = window.squadHistory || [];
+            
+            if (history.length === 0) {
+                previewEl.innerHTML = "<div class='breakdown' style='text-align:center; color:#ff5555; border-color:#552222;'>No cloud records currently saved.</div>";
+                return;
+            }
+
+            let html = `<div style="color: #66b2ff; margin-bottom: 15px; text-transform: uppercase; font-weight: bold; font-size: 0.85rem; text-align: center; letter-spacing: 1px;">Live Cloud History (Top 10)</div>`;
+
+            history.forEach(data => {
+                let timeDisplay = data.lobbyTime || 'Not Set';
+                if(timeDisplay !== 'Not Set' && timeDisplay.includes(':')) {
+                    const parts = timeDisplay.split(':');
+                    let hr = parseInt(parts[0]);
+                    const ampm = hr >= 12 ? 'PM' : 'AM';
+                    hr = hr % 12 || 12;
+                    timeDisplay = hr + ":" + parts[1] + " " + ampm;
+                }
+
+                html += `
+                <div class="history-card">
+                    <div class="history-header" onclick="toggleRecord('${data.firebaseId}')">
+                        <div style="display:flex; align-items:center; gap: 12px;">
+                            <div class="chevron" id="chevron-${data.firebaseId}">▼</div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: #888; margin-bottom: 4px;">${data.saveDate}</div>
+                                <div style="color: #fff; font-weight: bold; font-size: 0.95rem; letter-spacing: 0.5px;">Lobby: <span style="color:#00ffcc">${timeDisplay}</span></div>
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 0.7rem; color: #888; text-transform: uppercase; letter-spacing: 1px;">Total</div>
+                            <div style="color: #00ffcc; font-size: 1.4rem; font-weight: bold; margin-top: 2px;">${data.total}</div>
+                        </div>
+                    </div>
+                    <div id="record-${data.firebaseId}" class="history-content">
+                        <div class="history-inner">
+                            <div class="history-inner-content">
+                `;
+                
+                for(let i = 1; i <= 6; i++) {
+                    if(data.matches && data.matches[i]) {
+                        const pos = parseInt(data.matches[i].placement) || 0;
+                        const kills = parseInt(data.matches[i].kills) || 0;
+                        const pts = (pointMap[pos] || 0) + kills;
+                        const posDisplay = pos > 0 ? (pos + 'th') : '-';
+                        const suffixPos = posDisplay.replace('1th','1st').replace('2th','2nd').replace('3th','3rd');
+
+                        html += `<div style="display:flex; justify-content:space-between; border-bottom: 1px solid #222; padding: 10px 0; font-size: 0.85rem;">
+                                    <span style="color:#aaa">Match ${i}: <span style="color:#fff">${suffixPos} | ${kills} Kills</span></span>
+                                    <span style="color:var(--accent); font-weight: bold;">${pts} pts</span>
+                                 </div>`;
+                    }
+                }
+
+                html += `
+                                <div style="margin-top: 18px; display: flex; gap: 10px;">
+                                    <button class="btn btn-save" style="padding: 10px; font-size: 0.75rem; flex: 2;" onclick="loadRecord('${data.firebaseId}')">Load Tracker</button>
+                                    <button class="btn btn-danger" style="padding: 10px; font-size: 0.75rem; flex: 1; min-width: auto;" onclick="deleteRecord('${data.firebaseId}')">Delete</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+            });
+            previewEl.innerHTML = html;
+        }
+
+        window.toggleRecord = function(firebaseId) {
+            playTypeSound();
+            const content = document.getElementById('record-' + firebaseId);
+            const chevron = document.getElementById('chevron-' + firebaseId);
+            if(content.classList.contains('open')) {
+                content.classList.remove('open');
+                chevron.classList.remove('open');
+            } else {
+                content.classList.add('open');
+                chevron.classList.add('open');
+            }
+        }
+
+        window.toggleStorageView = function() {
+            playTypeSound();
+            const previewEl = document.getElementById('storagePreview');
+            if(previewEl.style.display === 'none' || previewEl.style.display === '') {
+                window.updateStorageView();
+                previewEl.style.display = 'block';
+                previewEl.style.animation = 'slideZoomIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards';
+            } else {
+                previewEl.style.display = 'none';
+            }
+        }
+
+        initApp();
+        
+        document.querySelectorAll('.placement-select').forEach(element => {
+            element.addEventListener('change', () => { calculateScores(); playTypeSound(); });
+        });
+        document.querySelectorAll('.kills-input').forEach(element => {
+            element.addEventListener('input', () => { calculateScores(); playTypeSound(); });
+        });
+    </script>
+</body>
+</html>
