@@ -108,7 +108,6 @@
 
         .page {
             display: none;
-            /* Ultra-smooth native app feel transition */
             animation: slideZoomIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
         }
 
@@ -225,7 +224,6 @@
             text-align: center;
             font-weight: bold;
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-            /* Important for the press effect */
             transform-origin: center;
         }
 
@@ -236,7 +234,6 @@
             border-color: #444;
         }
 
-        /* The satisfying "squish" when clicked */
         .btn:active {
             transform: scale(0.96) translateY(1px);
             box-shadow: 0 2px 5px rgba(0,0,0,0.3);
@@ -317,7 +314,6 @@
         .breakdown p { margin: 5px 0; }
         .breakdown span { color: #fff; font-weight: bold; }
 
-        /* Premium History Cards */
         .history-card {
             background: #181818; 
             border: 1px solid #2a2a2a; 
@@ -355,7 +351,6 @@
         }
         .chevron.open { transform: rotate(180deg); }
 
-        /* Silky CSS Grid Accordion */
         .history-content {
             display: grid;
             grid-template-rows: 0fr;
@@ -379,13 +374,67 @@
     <div class="app-container">
         <div class="header">
             <h1>Xyrex.esp</h1>
-            <p>Esports Score Tracker</p>
+            <p>Esports Score Tracker <span style="color:#00ffcc; font-size: 0.6rem;">● LIVE</span></p>
         </div>
 
         <div class="tabs" id="tabsContainer"></div>
         <div class="page-container" id="pageContainer"></div>
     </div>
 
+    <!-- FIREBASE MODULE SCRIPT -->
+    <script type="module">
+        // Using version 12.18.0 as provided
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+        import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-analytics.js";
+        import { getDatabase, ref, push, onValue, remove } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCBt7i9mvwCWLjuvNTJj5SZKmS8pdWjDzQ",
+            authDomain: "xyrex-esp.firebaseapp.com",
+            databaseURL: "https://xyrex-esp-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "xyrex-esp",
+            storageBucket: "xyrex-esp.firebasestorage.app",
+            messagingSenderId: "1075375453640",
+            appId: "1:1075375453640:web:f92c15c9212c8d82a37cfd",
+            measurementId: "G-04XH478WBL"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const analytics = getAnalytics(app);
+
+        // Log an event that the app was opened
+        logEvent(analytics, 'app_opened', { app_name: 'Xyrex_Tracker' });
+        
+        window.squadHistory = [];
+
+        onValue(ref(db, 'matches'), (snapshot) => {
+            const data = snapshot.val();
+            const newHistory = [];
+            
+            for (let id in data) {
+                newHistory.push({ firebaseId: id, ...data[id] });
+            }
+            
+            newHistory.sort((a, b) => b.id - a.id);
+            window.squadHistory = newHistory.slice(0, 10);
+            
+            if(document.getElementById('storagePreview').style.display === 'block') {
+                window.updateStorageView();
+            }
+        });
+
+        window.pushToCloud = async (trackingData) => {
+            await push(ref(db, 'matches'), trackingData);
+            logEvent(analytics, 'match_saved', { total_score: trackingData.total });
+        };
+
+        window.deleteFromCloud = async (firebaseId) => {
+            await remove(ref(db, 'matches/' + firebaseId));
+        };
+    </script>
+
+    <!-- UI & LOGIC SCRIPT -->
     <script>
         let audioCtx;
         function playTypeSound() {
@@ -486,242 +535,12 @@
                     </div>
                     
                     <div class="nav-buttons" style="margin-top: 25px;">
-                        <button class="btn btn-save" onclick="manualSave()">Save Data</button>
-                        <button class="btn btn-save" onclick="toggleStorageView()">View History</button>
+                        <button class="btn btn-save" onclick="manualSave()">Cloud Save Sync</button>
+                        <button class="btn btn-save" onclick="toggleStorageView()">View Live History</button>
                     </div>
 
                     <div id="storagePreview" style="display:none; margin-top: 20px;"></div>
 
                     <div class="nav-buttons" style="margin-top: 20px;">
                         <button class="btn" onclick="switchPage('page-6')" style="width: 100%;">Back to M6</button>
-                    </div>
-                </div>
-            `;
-        }
-
-        // --- NEW: Smooth Number Animation Function ---
-        function animateValue(obj, start, end, duration) {
-            let startTimestamp = null;
-            const step = (timestamp) => {
-                if (!startTimestamp) startTimestamp = timestamp;
-                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-                // easeOutExpo for very smooth decelleration
-                const ease = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
-                obj.innerHTML = Math.floor(ease * (end - start) + start);
-                if (progress < 1) {
-                    window.requestAnimationFrame(step);
-                }
-            };
-            window.requestAnimationFrame(step);
-        }
-
-        function triggerPulse(elId) {
-            const el = document.getElementById(elId);
-            if(el) {
-                el.classList.remove('pulse-anim');
-                void el.offsetWidth; 
-                el.classList.add('pulse-anim');
-            }
-        }
-
-        function calculateScores() {
-            let grandTotal = 0;
-            const grandTotalEl = document.getElementById('grandTotalDisplay');
-            let currentTotal = parseInt(grandTotalEl.textContent) || 0;
-            
-            for (let i = 1; i <= 6; i++) {
-                const select = document.querySelector('.placement-select[data-match="' + i + '"]');
-                const input = document.querySelector('.kills-input[data-match="' + i + '"]');
                 
-                const pos = parseInt(select.value) || 0;
-                const placementPts = pointMap[pos] || 0;
-                const kills = parseInt(input.value) || 0;
-                
-                const matchScore = placementPts + kills;
-                const matchEl = document.getElementById('matchTotal' + i);
-                let currentMatchTotal = parseInt(matchEl.textContent) || 0;
-                
-                // Animate individual match score
-                if (currentMatchTotal !== matchScore) {
-                    animateValue(matchEl, currentMatchTotal, matchScore, 600);
-                    triggerPulse('matchTotal' + i);
-                }
-                
-                // Update breakdown numbers directly
-                document.getElementById('sum' + i).textContent = matchScore;
-                grandTotal += matchScore;
-            }
-            
-            // Animate Grand Total
-            if (currentTotal !== grandTotal) {
-                animateValue(grandTotalEl, currentTotal, grandTotal, 800);
-                triggerPulse('grandTotalDisplay');
-            }
-        }
-
-        function getHistory() {
-            try { return JSON.parse(localStorage.getItem('xyrex_history') || '[]'); } 
-            catch (e) { return []; }
-        }
-
-        window.manualSave = function() {
-            playTypeSound();
-            let history = getHistory();
-            const now = new Date();
-            const dateStr = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-
-            const trackingData = {
-                id: Date.now(),
-                saveDate: dateStr,
-                lobbyTime: document.getElementById('global-lobby-time').value,
-                total: document.getElementById('grandTotalDisplay').textContent,
-                matches: {}
-            };
-            
-            for (let i = 1; i <= 6; i++) {
-                trackingData.matches[i] = {
-                    placement: document.querySelector('.placement-select[data-match="' + i + '"]').value,
-                    kills: document.querySelector('.kills-input[data-match="' + i + '"]').value
-                };
-            }
-            
-            history.unshift(trackingData);
-            if(history.length > 6) history = history.slice(0, 6);
-            localStorage.setItem('xyrex_history', JSON.stringify(history));
-            
-            if(document.getElementById('storagePreview').style.display === 'block') {
-                updateStorageView();
-            }
-            alert("Match data saved successfully to history!");
-        }
-
-        window.loadRecord = function(id) {
-            playTypeSound();
-            const record = getHistory().find(r => r.id === id);
-            if (record) {
-                if (record.lobbyTime) document.getElementById('global-lobby-time').value = record.lobbyTime;
-                for (let i = 1; i <= 6; i++) {
-                    if (record.matches[i]) {
-                        document.querySelector('.placement-select[data-match="' + i + '"]').value = record.matches[i].placement || "0";
-                        document.querySelector('.kills-input[data-match="' + i + '"]').value = record.matches[i].kills || "";
-                    }
-                }
-                calculateScores();
-                alert("Tracker updated with saved data!");
-            }
-        }
-
-        window.deleteRecord = function(id) {
-            playTypeSound();
-            if(confirm("Delete this saved match record?")) {
-                let history = getHistory().filter(r => r.id !== id);
-                localStorage.setItem('xyrex_history', JSON.stringify(history));
-                updateStorageView();
-            }
-        }
-
-        window.updateStorageView = function() {
-            const previewEl = document.getElementById('storagePreview');
-            const history = getHistory();
-            
-            if (history.length === 0) {
-                previewEl.innerHTML = "<div class='breakdown' style='text-align:center; color:#ff5555; border-color:#552222;'>No match records currently saved.</div>";
-                return;
-            }
-
-            let html = `<div style="color: #66b2ff; margin-bottom: 15px; text-transform: uppercase; font-weight: bold; font-size: 0.85rem; text-align: center; letter-spacing: 1px;">Saved History (Max 6)</div>`;
-
-            history.forEach(data => {
-                let timeDisplay = data.lobbyTime || 'Not Set';
-                if(timeDisplay !== 'Not Set' && timeDisplay.includes(':')) {
-                    const parts = timeDisplay.split(':');
-                    let hr = parseInt(parts[0]);
-                    const ampm = hr >= 12 ? 'PM' : 'AM';
-                    hr = hr % 12 || 12;
-                    timeDisplay = hr + ":" + parts[1] + " " + ampm;
-                }
-
-                html += `
-                <div class="history-card">
-                    <div class="history-header" onclick="toggleRecord(${data.id})">
-                        <div style="display:flex; align-items:center; gap: 12px;">
-                            <div class="chevron" id="chevron-${data.id}">▼</div>
-                            <div>
-                                <div style="font-size: 0.75rem; color: #888; margin-bottom: 4px;">${data.saveDate}</div>
-                                <div style="color: #fff; font-weight: bold; font-size: 0.95rem; letter-spacing: 0.5px;">Lobby: <span style="color:#00ffcc">${timeDisplay}</span></div>
-                            </div>
-                        </div>
-                        <div style="text-align: right;">
-                            <div style="font-size: 0.7rem; color: #888; text-transform: uppercase; letter-spacing: 1px;">Total</div>
-                            <div style="color: #00ffcc; font-size: 1.4rem; font-weight: bold; margin-top: 2px;">${data.total}</div>
-                        </div>
-                    </div>
-                    <div id="record-${data.id}" class="history-content">
-                        <div class="history-inner">
-                            <div class="history-inner-content">
-                `;
-                
-                for(let i = 1; i <= 6; i++) {
-                    if(data.matches && data.matches[i]) {
-                        const pos = parseInt(data.matches[i].placement) || 0;
-                        const kills = parseInt(data.matches[i].kills) || 0;
-                        const pts = (pointMap[pos] || 0) + kills;
-                        const posDisplay = pos > 0 ? (pos + 'th') : '-';
-                        const suffixPos = posDisplay.replace('1th','1st').replace('2th','2nd').replace('3th','3rd');
-
-                        html += `<div style="display:flex; justify-content:space-between; border-bottom: 1px solid #222; padding: 10px 0; font-size: 0.85rem;">
-                                    <span style="color:#aaa">Match ${i}: <span style="color:#fff">${suffixPos} | ${kills} Kills</span></span>
-                                    <span style="color:var(--accent); font-weight: bold;">${pts} pts</span>
-                                 </div>`;
-                    }
-                }
-
-                html += `
-                                <div style="margin-top: 18px; display: flex; gap: 10px;">
-                                    <button class="btn btn-save" style="padding: 10px; font-size: 0.75rem; flex: 2;" onclick="loadRecord(${data.id})">Load Tracker</button>
-                                    <button class="btn btn-danger" style="padding: 10px; font-size: 0.75rem; flex: 1; min-width: auto;" onclick="deleteRecord(${data.id})">Delete</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>`;
-            });
-            previewEl.innerHTML = html;
-        }
-
-        window.toggleRecord = function(id) {
-            playTypeSound();
-            const content = document.getElementById('record-' + id);
-            const chevron = document.getElementById('chevron-' + id);
-            if(content.classList.contains('open')) {
-                content.classList.remove('open');
-                chevron.classList.remove('open');
-            } else {
-                content.classList.add('open');
-                chevron.classList.add('open');
-            }
-        }
-
-        window.toggleStorageView = function() {
-            playTypeSound();
-            const previewEl = document.getElementById('storagePreview');
-            if(previewEl.style.display === 'none' || previewEl.style.display === '') {
-                updateStorageView();
-                previewEl.style.display = 'block';
-                previewEl.style.animation = 'slideZoomIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards';
-            } else {
-                previewEl.style.display = 'none';
-            }
-        }
-
-        initApp();
-        
-        document.querySelectorAll('.placement-select').forEach(element => {
-            element.addEventListener('change', () => { calculateScores(); playTypeSound(); });
-        });
-        document.querySelectorAll('.kills-input').forEach(element => {
-            element.addEventListener('input', () => { calculateScores(); playTypeSound(); });
-        });
-    </script>
-</body>
-</html>
